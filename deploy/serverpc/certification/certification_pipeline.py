@@ -30,6 +30,8 @@ def load_ttl_pulses(session_path, fr2ttl_ch):
     :rtype: np.ndarray
     """
 
+    # from ibllib.io.extractors.ephys_fpga import _get_main_probe_sync
+
     # ttl pulses on the left probe if present
     if os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_left')):
         probe_dir = 'probe_left'
@@ -50,12 +52,23 @@ def load_ttl_pulses(session_path, fr2ttl_ch):
     if len(np.unique(sync_ch)) == 0:
         raise ValueError('no spikeglx sync pulses found; was the data correctly extracted?')
 
-    # find times of when ttl polarity changes on fr2ttl channel
     sync_pol_ = sync_pol[sync_ch == fr2ttl_ch]
     sync_times_ = sync_times[sync_ch == fr2ttl_ch]
     sync_rise_times = sync_times_[sync_pol_ == 1]
     sync_fall_times = sync_times_[sync_pol_ == -1]
     ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
+
+    # get sync pulses
+    # sync, sync_chmap = _get_main_probe_sync(session_path)
+    # fr2ttl_ch = sync_chmap['frame2ttl']
+
+    # find times of when ttl polarity changes on fr2ttl channel
+    # sync_pol_ = sync['polarities'][sync['channels'] == fr2ttl_ch]
+    # sync_times_ = sync['times'][sync['channels'] == fr2ttl_ch]
+    # sync_rise_times = sync_times_[sync_pol_ == 1]
+    # sync_fall_times = sync_times_[sync_pol_ == -1]
+    # ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
+
     return ttl_sig
 
 
@@ -115,14 +128,17 @@ def get_contrast_reversal_stimulus(stim_metadata):
 
     :param stim_metadata: dictionary of stimulus metadata loaded from task json file
     :type stim_metadata: dict
-    :return: np array of shape (n_stims, y_pix, x_pix)
+    :return: np array of shape (n_stims,)
     :rtype: np.ndarray
     """
     stim_idx = get_stim_num_from_name(stim_metadata['VISUAL_STIMULI'], 'contrast_reversal')
     stim_metadata = stim_metadata['VISUAL_STIM_%i' % stim_idx]
-    patch_contrasts = stim_metadata['stim_patch_contrasts']
-    frames = np.stack([patch_contrasts[str(n)] for n in stim_metadata['stim_sequence']])
-    return frames
+    # return actual frames
+    # patch_contrasts = stim_metadata['stim_patch_contrasts']
+    # frames = np.stack([patch_contrasts[str(n)] for n in stim_metadata['stim_sequence']])
+    # return index into actual frames
+    stim = np.array(stim_metadata['stim_sequence'])
+    return stim
 
 
 def get_task_stimulus(session_path):
@@ -135,7 +151,8 @@ def get_task_stimulus(session_path):
     :rtype: np.ndarray
     """
     from zipfile import ZipFile
-    stim_file_zip = os.path.join(session_path, 'raw_behavior_data', '_iblrig_codeFiles.raw.zip')
+    stim_file_zip = glob.glob(os.path.join(
+        session_path, 'raw_behavior_data', '_iblrig_codeFiles*.zip'))[0]
     zf = ZipFile(stim_file_zip)
     stim_file = 'ephys_certification/04_ContrastSelectivityTaskStim/stims.csv'
     with zf.open(stim_file) as f:
@@ -238,6 +255,41 @@ def get_spacer_times(spacer_template, jitter, ttl_signal, t_quiet):
         spacer_times[i, 0] = t - (spacer_length / 2) - t_quiet
         spacer_times[i, 1] = t + (spacer_length / 2) + t_quiet
     return spacer_times, conv_dttl
+
+
+def interpolate_rf_mapping_stimulus(ttl_signal, times, frames, t_bin):
+    """
+    Interpolate stimulus presentation times to screen refresh rate to match `frames`
+
+    :param ttl_signal:
+    :type ttl_signal: array-like
+    :param times: array of stimulus switch times
+    :type times: array-like
+    :param frames: (time, y_pix, x_pix) array of stim frames
+    :type frames: array-like
+    :param t_bin: screen refresh rate
+    :type t_bin: float
+    :return: tuple of (stim_times, stim_frames)
+    """
+
+    beg_extrap_val = -10001
+    end_extrap_val = -10000
+
+    idxs_up, idxs_dn = get_rf_ttl_pulses(ttl_signal)
+    X = np.sort(np.concatenate([idxs_up, idxs_dn]))
+    Xq = np.arange(frames.shape[0])
+    # make left and right extrapolations distinctive to easily find later
+    Tq = np.interp(Xq, X, times, left=beg_extrap_val, right=end_extrap_val)
+    # uniform spacing outside boundaries of ttl signal
+    # first values
+    n_beg = len(np.where(Tq == beg_extrap_val)[0])
+    if 0 < n_beg < Tq.shape[0]:
+        Tq[:n_beg] = times[0] - np.arange(n_beg, 0, -1) * t_bin
+    # end values
+    n_end = len(np.where(Tq == end_extrap_val)[0])
+    if 0 < n_end < Tq.shape[0]:
+        Tq[-n_end:] = times[-1] + np.arange(1, n_end + 1) * t_bin
+    return Tq, frames
 
 
 def export_to_alf(session_path, stim_ts, stim_datas, stim_names):
@@ -345,13 +397,13 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
 
     IBLRIG_VERSION_MIN = '5.2.9'
 
-    # load session metadata
-    meta = load_session_metadata(session_path)
-
     # get ttl signal for extracting stim info (to compare with expected ttl signals in metadata)
     ttl_sig = load_ttl_pulses(session_path, fr2ttl_ch)
 
-    # pull useful fields out of metadata
+    # load session metadata
+    meta = load_session_metadata(session_path)
+
+    # basic checks
     protocol = meta['VISUAL_STIMULUS_TYPE']
     if protocol != 'ephys_certification':
         raise ValueError(
@@ -364,11 +416,12 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
                 iblrig_version, iblrig_version_min))
     print('extracting TTL pulses for iblrig version %s' % meta['IBLRIG_VERSION_TAG'])
 
+    # pull useful fields out of metadata
     stim_ids = meta['VISUAL_STIMULI']
     stim_order = np.array(meta['STIM_ORDER'])
+    frames = load_rf_mapping_stimulus(session_path, meta)
     id_spacer = get_stim_num_from_name(stim_ids, 'spacer')
     spacer_template = t_bin * np.array(meta['VISUAL_STIM_%i' % id_spacer]['ttl_frame_nums'])
-    frames = load_rf_mapping_stimulus(session_path, meta)
 
     # get expected ttl pulses from upper left stim pixel (rf mapping) and metadata (all other stims)
     if len(frames) != 0:
@@ -377,12 +430,7 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
         frame_ttl_signal = None
     n_expected_ttl_pulses = get_expected_ttl_pulses(stim_order, meta, frame_ttl_signal)
 
-    # collect stimulus/spacer info
-    stim_ts = [[] for _ in stim_order]
-    stim_datas = [[] for _ in stim_order]
-    stim_names = [[] for _ in stim_order]
-
-    # start with spacers
+    # get spacer info
     spacer_times, conv_sig = get_spacer_times(spacer_template, t_bin * bin_jitter, ttl_sig, 1)
     idxs_spacer = np.where(stim_order == get_stim_num_from_name(stim_ids, 'spacer'))[0]
     n_expected_spacers = len(idxs_spacer)
@@ -394,7 +442,10 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
     else:
         print('found expected number of stimulus spacers')
 
-    # now stimuli
+    # get stimulus info
+    stim_ts = [[] for _ in stim_order]
+    stim_datas = [[] for _ in stim_order]
+    stim_names = [[] for _ in stim_order]
     incorrect_pulses = 0
     for i, stim_id in enumerate(stim_order):
         stim_names[i] = stim_ids[str(stim_id)].lower()
@@ -442,37 +493,19 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
                 print(
                     'TTL pulses inconsistent for %s; expected %i, found %i' %
                     (stim_names[i], n_expected_ttl_pulses[i], stim_ts[i].shape[0]))
-
     if incorrect_pulses == 0:
         print('found expected number of TTL pulses')
 
     # assign proper timestamps for rf mapping
     if frame_ttl_signal is not None:
-        beg_extrap_val = -10001
-        end_extrap_val = -10000
-
         # assumes there is only 1 presentation of RF mapping
         idx_rfs = np.where(
             stim_order == get_stim_num_from_name(stim_ids, 'receptive_field_mapping'))[0]
         if len(idx_rfs) > 1:
             raise NotImplementedError
         idx_rf = idx_rfs[0]
-
-        idxs_up, idxs_dn = get_rf_ttl_pulses(frame_ttl_signal)
-        X = np.sort(np.concatenate([idxs_up, idxs_dn]))
-        T = stim_ts[idx_rf]
-        Xq = np.arange(frames.shape[0])
-        # make left and right extrapolations distinctive to easily find later
-        Tq = np.interp(Xq, X, T, left=beg_extrap_val, right=end_extrap_val)
-        # uniform spacing outside boundaries of ttl signal
-        # first values
-        n_beg = len(np.where(Tq == beg_extrap_val)[0])
-        Tq[:n_beg] = T[0] - np.arange(n_beg, 0, -1) * t_bin
-        # end values
-        n_end = len(np.where(Tq == end_extrap_val)[0])
-        Tq[-n_end:] = T[-1] + np.arange(1, n_end + 1) * t_bin
-        stim_ts[idx_rf] = Tq
-        stim_datas[idx_rf] = frames
+        stim_ts[idx_rf], stim_datas[idx_rf] = interpolate_rf_mapping_stimulus(
+            frame_ttl_signal, stim_ts[idx_rf], frames, t_bin)
 
     if save and incorrect_pulses == 0:
         print('exporting stimulus information to %s' % os.path.join(session_path, 'alf/'))
