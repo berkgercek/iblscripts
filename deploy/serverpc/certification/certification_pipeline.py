@@ -463,7 +463,12 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
             elif stim_names[i] == 'orientation-direction_selectivity':
                 # offset by 2 at beginning; rapid transient artifact due to Bonsai loading
                 # separate ttl pulses for stim on and stim off
-                stim_ts[i] = np.stack([ttl_sig[ttl_times[2::2]], ttl_sig[ttl_times[3::2]]], axis=1)
+                if np.diff(ttl_sig[ttl_times[:2]]) < 0.5:
+                    stim_ts[i] = np.stack(
+                        [ttl_sig[ttl_times[2::2]], ttl_sig[ttl_times[3::2]]], axis=1)
+                else:
+                    stim_ts[i] = np.stack(
+                        [ttl_sig[ttl_times[0::2]], ttl_sig[ttl_times[1::2]]], axis=1)
                 # ttl pulse for each stim rather than on/off
                 n_expected_ttl_pulses[i] /= 2
                 stim_sequence = meta['VISUAL_STIM_%i' % stim_id]['stim_sequence']
@@ -475,7 +480,12 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
                 stim_datas[i] = get_contrast_reversal_stimulus(meta)
             elif stim_names[i] == 'task_stimuli':
                 # separate ttl pulses for stim on and stim off
-                stim_ts[i] = np.stack([ttl_sig[ttl_times[0::2]], ttl_sig[ttl_times[1::2]]], axis=1)
+                if np.diff(ttl_sig[ttl_times[:2]]) < 0.5:
+                    stim_ts[i] = np.stack(
+                        [ttl_sig[ttl_times[2::2]], ttl_sig[ttl_times[3::2]]], axis=1)
+                else:
+                    stim_ts[i] = np.stack(
+                        [ttl_sig[ttl_times[0::2]], ttl_sig[ttl_times[1::2]]], axis=1)
                 # ttl pulse for each stim rather than on/off
                 n_expected_ttl_pulses[i] /= 2
                 stim_datas[i] = get_task_stimulus(session_path)
