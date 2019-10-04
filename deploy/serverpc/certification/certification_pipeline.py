@@ -305,7 +305,9 @@ def export_to_alf(session_path, stim_ts, stim_datas, stim_names):
             np.save(os.path.join(session_path, 'alf', filename_times), stim_t)
         if shape_d != 0:
             np.save(os.path.join(session_path, 'alf', filename_stims), stim_data)
-    
+
+    # alert cronjobs that there are new files to register to the database by saving empty file
+    open(os.path.join(session_path, 'register_me.flag'), 'a').close()
 
 
 def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jitter=3, save=True):
