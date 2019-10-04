@@ -47,6 +47,9 @@ def load_ttl_pulses(session_path, fr2ttl_ch):
     sync_times = np.load(glob.glob(
         os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.times*'))[0])
 
+    if len(np.unique(sync_ch)) == 0:
+        raise ValueError('no spikeglx sync pulses found; was the data correctly extracted?')
+
     # find times of when ttl polarity changes on fr2ttl channel
     sync_pol_ = sync_pol[sync_ch == fr2ttl_ch]
     sync_times_ = sync_times[sync_ch == fr2ttl_ch]
@@ -239,13 +242,40 @@ def get_spacer_times(spacer_template, jitter, ttl_signal, t_quiet):
 
 def export_to_alf(session_path, stim_ts, stim_datas, stim_names):
     """
+    Export extracted stimuli and their presentation times to the session alf directory.
 
     :param session_path: absolute path of a session, i.e. /mnt/data/Subjects/ZM_1887/2019-07-10/001
     :param stim_ts:
     :param stim_datas:
     :param stim_names:
-    :return:
+    :return: None; instead, saves the following files into `session_path/alf`; the 'xx' part of the
+        following filenames will be '00', '01', etc., one for each time the specific protocol is run
+
+        orientation/direction selectivity
+        `_iblcertif_.odsgratings.times.xx.npy`: shape (n_stims, 2); columns are
+            (stim on time, stim off time)
+        `_iblcertif_.odsgratings.stims.xx.npy`: shape (n_stims,); value is grating angle
+
+        contrast reversal
+        `_iblcertif_.reversal.times.xx.npy`: shape (n_stims,); stim presentation times
+        `_iblcertif_.reversal.stims.xx.npy`: shape (n_stims,); stim identity - these values map into
+            the matrices defined in `_iblrig_taskSettings.raw.json` files, 'VISUAL_STIM_3' ->
+            'stim_patch_contrasts'
+
+        receptive field mapping (sparse noise)
+        `_iblcertif_.rfmap.times.xx.npy`: shape (n_stims,); stim presentation times
+        `_iblcertif_.rfmap.stims.xx.npy`: shape (n_stims, y_pix, x_pix); sparse noise stim frames
+
+        spontaneous activity:
+        `_iblcertif_.spontaneous.times.xx.npy`: shape (2,); start and end times of spont activity
+
+        task stimuli (gratings of varying locations/contrast)
+        `_iblcertif_.task.times.xx.npy`: shape (n_stims, 2); columns  are
+            (stim on time, stim off time)
+        `_iblcertif_.task.stims.xx.npy`: shape (n_stims, 2); columns are
+            (azimuth in degrees [i.e. left or right], contrast)
     """
+
     counters = {stim_name: 0 for stim_name in np.unique(stim_names)}
     for stim_t, stim_data, stim_name in zip(stim_ts, stim_datas, stim_names):
         if stim_name == 'spacer':
@@ -275,6 +305,7 @@ def export_to_alf(session_path, stim_ts, stim_datas, stim_names):
             np.save(os.path.join(session_path, 'alf', filename_times), stim_t)
         if shape_d != 0:
             np.save(os.path.join(session_path, 'alf', filename_stims), stim_data)
+    
 
 
 def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jitter=3, save=True):
@@ -306,7 +337,8 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
     :return: None; instead stimulus info is stored in the following alf files:
             `_iblcertification_.stimtype.times.00.npy`
             `_iblcertification_.stimtype.frames.00.npy`
-        where `stimtype` are `odsgratings`, `sparsenoise`, `contrastreversal`, and `taskstimulus`
+        where `stimtype` are `odsgratings`, `sparsenoise`, `contrastreversal`, and `taskstimulus`;
+        see `export_to_alf` function documentation for more info on file structure
     """
 
     IBLRIG_VERSION_MIN = '5.2.9'
