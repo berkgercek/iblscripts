@@ -18,56 +18,64 @@ def load_session_metadata(session_path):
     return meta
 
 
-def load_ttl_pulses(session_path, fr2ttl_ch):
+def load_ttl_pulses(session_path):
     """
     Extract ttl pulses from sync signals
 
     :param session_path: absolute path of a session, i.e. /mnt/data/Subjects/ZM_1887/2019-07-10/001
     :type session_path: str
-    :param fr2ttl_ch: channel that carries ttl pulses
-    :type fr2ttl_ch: int
     :return: ttl pulse times
     :rtype: np.ndarray
     """
 
-    # from ibllib.io.extractors.ephys_fpga import _get_main_probe_sync
+    from ibllib.io.extractors.ephys_fpga import _get_main_probe_sync
 
     # ttl pulses on the left probe if present
-    if os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_left')):
-        probe_dir = 'probe_left'
-    elif os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_right')):
-        probe_dir = 'probe_right'
-    else:
-        raise ValueError(
-            'No probe directories present in %s' % os.path.join(session_path, 'raw_ephys_data'))
-
-    # load sync data (can move to ONE soon)
-    sync_ch = np.load(glob.glob(
-        os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.channels*'))[0])
-    sync_pol = np.load(glob.glob(
-        os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.polarities*'))[0])
-    sync_times = np.load(glob.glob(
-        os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.times*'))[0])
-
-    if len(np.unique(sync_ch)) == 0:
-        raise ValueError('no spikeglx sync pulses found; was the data correctly extracted?')
-
-    sync_pol_ = sync_pol[sync_ch == fr2ttl_ch]
-    sync_times_ = sync_times[sync_ch == fr2ttl_ch]
-    sync_rise_times = sync_times_[sync_pol_ == 1]
-    sync_fall_times = sync_times_[sync_pol_ == -1]
-    ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
-
-    # get sync pulses
-    # sync, sync_chmap = _get_main_probe_sync(session_path)
-    # fr2ttl_ch = sync_chmap['frame2ttl']
-
-    # find times of when ttl polarity changes on fr2ttl channel
-    # sync_pol_ = sync['polarities'][sync['channels'] == fr2ttl_ch]
-    # sync_times_ = sync['times'][sync['channels'] == fr2ttl_ch]
+    # if os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_left')):
+    #     probe_dir = 'probe_left'
+    # elif os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_right')):
+    #     probe_dir = 'probe_right'
+    # else:
+    #     raise ValueError(
+    #         'No probe directories present in %s' % os.path.join(session_path, 'raw_ephys_data'))
+    #
+    # # load sync data (can move to ONE soon)
+    # sync_ch = np.load(glob.glob(
+    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.channels*'))[0])
+    # sync_pol = np.load(glob.glob(
+    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.polarities*'))[0])
+    # sync_times = np.load(glob.glob(
+    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.times*'))[0])
+    #
+    # if len(np.unique(sync_ch)) == 0:
+    #     raise ValueError('no spikeglx sync pulses found; was the data correctly extracted?')
+    #
+    # sync_pol_ = sync_pol[sync_ch == fr2ttl_ch]
+    # sync_times_ = sync_times[sync_ch == fr2ttl_ch]
     # sync_rise_times = sync_times_[sync_pol_ == 1]
     # sync_fall_times = sync_times_[sync_pol_ == -1]
     # ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
+
+    # get sync pulses
+    try:
+        sync, sync_chmap = _get_main_probe_sync(session_path)
+    except FileNotFoundError:
+        # temporary fix: create empty bin files in `probe_right` for Guido dataset
+        lf_file = 'sync_testing_g0_t0.imec1.lf.bin'
+        open(os.path.join(session_path, 'raw_ephys_data', 'probe_right', lf_file), 'a').close()
+        ap_file = 'sync_testing_g0_t0.imec1.ap.bin'
+        open(os.path.join(session_path, 'raw_ephys_data', 'probe_right', ap_file), 'a').close()
+        # try again
+        sync, sync_chmap = _get_main_probe_sync(session_path)
+
+    fr2ttl_ch = sync_chmap['frame2ttl']
+
+    # find times of when ttl polarity changes on fr2ttl channel
+    sync_pol_ = sync['polarities'][sync['channels'] == fr2ttl_ch]
+    sync_times_ = sync['times'][sync['channels'] == fr2ttl_ch]
+    sync_rise_times = sync_times_[sync_pol_ == 1]
+    sync_fall_times = sync_times_[sync_pol_ == -1]
+    ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
 
     return ttl_sig
 
@@ -362,7 +370,7 @@ def export_to_alf(session_path, stim_ts, stim_datas, stim_names):
     open(os.path.join(session_path, 'register_me.flag'), 'a').close()
 
 
-def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jitter=3, save=True):
+def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=True):
     """
     Extract the stimulus information stored in metadata and export to alf files. Also checks to make
     sure ttl pulses were extracted properly.
@@ -379,9 +387,6 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
 
     :param session_path: absolute path of a session, i.e. /mnt/data/Subjects/ZM_1887/2019-07-10/001
     :type session_path: str
-    :param fr2ttl_ch: ttl channel that controls stimulus presentation; will be checked against
-        session metadata
-    :type fr2ttl_ch: int
     :param t_bin: screen refresh rate
     :type t_bin: float
     :param bin_jitter: fudge factor in spacer template matching (units of time bins)
@@ -398,7 +403,7 @@ def extract_stimulus_info_to_alf(session_path, fr2ttl_ch=12, t_bin=1/60, bin_jit
     IBLRIG_VERSION_MIN = '5.2.9'
 
     # get ttl signal for extracting stim info (to compare with expected ttl signals in metadata)
-    ttl_sig = load_ttl_pulses(session_path, fr2ttl_ch)
+    ttl_sig = load_ttl_pulses(session_path)
 
     # load session metadata
     meta = load_session_metadata(session_path)
@@ -532,7 +537,20 @@ if __name__ == '__main__':
 
     one = ONE()
     eid = one.search(subject='ZM_2104', date='2019-09-19', number=1)
-    D = one.load(eid[0], clobber=False, download_only=True)
-    sess_path = Path(D.local_path[0]).parent.parent
+    dtypes = [
+        # 'clusters.channels',
+        # 'clusters.depths',
+        #     'spikes.clusters',
+        #     'spikes.depths',
+        #     'spikes.times',
+        '_spikeglx_sync.channels',
+        '_spikeglx_sync.polarities',
+        '_spikeglx_sync.times',
+        '_iblrig_RFMapStim.raw',
+        '_iblrig_codeFiles.raw',
+        '_iblrig_taskSettings.raw'
+    ]
+    files_paths = one.load(eid[0], dataset_types=dtypes, clobber=False, download_only=True)
+    session_path = Path(files_paths[0]).parent.parent
 
-    extract_stimulus_info_to_alf(sess_path, save=True)
+    extract_stimulus_info_to_alf(session_path, save=True)
