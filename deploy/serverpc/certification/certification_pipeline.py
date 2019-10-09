@@ -534,6 +534,7 @@ if __name__ == '__main__':
     # example usage
     import os
     import numpy as np
+    from pathlib import Path
     from oneibl.one import ONE
 
     one = ONE()
@@ -552,10 +553,10 @@ if __name__ == '__main__':
         '_iblrig_taskSettings.raw'
     ]
     files_paths = one.load(eid[0], dataset_types=dtypes, clobber=False, download_only=True)
-    ephys_dir = np.where([part == 'raw_ephys_data' for part in files_paths[0].parts])[0]
+    ephys_dir = np.where([part == 'raw_ephys_data' for part in Path(files_paths[0]).parts])[0]
     if len(ephys_dir) == 0:
         raise FileNotFoundError(
             'Must download _spikeglx_sync_ files into `raw_ephys_data` directory')
-    session_path = os.path.join(*files_paths[0].parts[:ephys_dir[0]])
+    session_path = os.path.join(*Path(files_paths[0]).parts[:ephys_dir[0]])
 
     extract_stimulus_info_to_alf(session_path, save=True)
