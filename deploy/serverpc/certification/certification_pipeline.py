@@ -532,17 +532,18 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
 if __name__ == '__main__':
 
     # example usage
+    import os
+    import numpy as np
     from oneibl.one import ONE
-    from pathlib import Path
 
     one = ONE()
     eid = one.search(subject='ZM_2104', date='2019-09-19', number=1)
     dtypes = [
         # 'clusters.channels',
         # 'clusters.depths',
-        #     'spikes.clusters',
-        #     'spikes.depths',
-        #     'spikes.times',
+        # 'spikes.clusters',
+        # 'spikes.depths',
+        # 'spikes.times',
         '_spikeglx_sync.channels',
         '_spikeglx_sync.polarities',
         '_spikeglx_sync.times',
@@ -551,6 +552,10 @@ if __name__ == '__main__':
         '_iblrig_taskSettings.raw'
     ]
     files_paths = one.load(eid[0], dataset_types=dtypes, clobber=False, download_only=True)
-    session_path = Path(files_paths[0]).parent.parent
+    ephys_dir = np.where([part == 'raw_ephys_data' for part in files_paths[0].parts])[0]
+    if len(ephys_dir) == 0:
+        raise FileNotFoundError(
+            'Must download _spikeglx_sync_ files into `raw_ephys_data` directory')
+    session_path = os.path.join(*files_paths[0].parts[:ephys_dir[0]])
 
     extract_stimulus_info_to_alf(session_path, save=True)
