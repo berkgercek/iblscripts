@@ -3,10 +3,11 @@ clear all
 close all
 clc
 %% Session - path to data
-filepath_NPY ='/Users/gaelle/Downloads/Alex_test/'; 
-filepath_Metadata = '/Users/gaelle/Downloads/Alex_test/';
+filepath_NPY ='D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
+filepath_Metadata = 'D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
 
-%% Read NPY 
+
+%% Read NPY
 synch_pol = ReturnDataNPY([filepath_NPY filesep '*_spikeglx_sync.polarities*']);
 synch_tim = ReturnDataNPY([filepath_NPY filesep '*_spikeglx_sync.times*']);
 synch_cha = ReturnDataNPY([filepath_NPY filesep '*_spikeglx_sync.channels*']);
@@ -17,7 +18,7 @@ Fscreen = 60; % Hz, Ipad screen refresh rate
 
 % -- Map HW channels, see ibllib.io.extractors.ephys_fpga
 %    TODO : Hardcoded, should be loaded from channel map metadata (if exists)
-ch_frame2ttl = 12; % only io needed for this protocol
+ch_frame2ttl = 4; % 4-12 only io needed for this protocol
 
 %% Read meta data
 % Extracted from .raw BIN file
@@ -68,7 +69,7 @@ id_raise = find(TTL_data01==0 & [d_TTL_data01; 0]==1);
 id_fall = find(TTL_data01==0 & [d_TTL_data01; 0]==-1);
 
 % -- number of rising TTL pulse expected in frame2ttl trace
-TTL_data_Rise_Expected = ...   
+TTL_data_Rise_Expected = ...
     length(id_raise) + ...
     length(id_fall);
 
@@ -76,13 +77,13 @@ TTL_data_Rise_Expected = ...
 %% Init expected TTL for each stimulus
 nTTL_Stim_expected = zeros(1,n_stim);
 
-for i_stim = 1:n_stim     
+for i_stim = 1:n_stim
     if ID_stim(i_stim) == 5 % spont. act.
-       nTTL_Stim_expected(i_stim) = 0;
+        nTTL_Stim_expected(i_stim) = 0;
     elseif ID_stim(i_stim) ==1 % RF
         nTTL_Stim_expected(i_stim) = TTL_data_Rise_Expected;
     else
-       eval(['nTTL_Stim_expected(i_stim) = TaskSettings.VISUAL_STIM_' num2str(ID_stim(i_stim)) '.ttl_num;']); 
+        eval(['nTTL_Stim_expected(i_stim) = TaskSettings.VISUAL_STIM_' num2str(ID_stim(i_stim)) '.ttl_num;']);
     end
 end
 clear i_stim
@@ -97,14 +98,16 @@ polarity=-1;
 
 clear polarity channelID
 
-sort_RF = sort([synch_Fal_tim ; synch_Ris_tim]);
+[sort_RF, indx_sort] = sort([synch_Fal_tim ; synch_Ris_tim]);
+vect_polarity = [-1*ones(size(synch_Fal_tim)) ; ones(size(synch_Ris_tim)) ];
+vect_polarity_sort = vect_polarity(indx_sort);
 
 %% Find stimulus spacer timestamps
 % --- Time between state (frame) change from Metadata
 diff_frame_time = diff( Tscreen * TaskSettings.VISUAL_STIM_0.ttl_frame_nums );
 
 % --- Build model of TTL response
-jitter = Tscreen * 3; 
+jitter = Tscreen * 3;
 model_frame = jitter + diff_frame_time(1+2 : end-2); % remove 2 extreme values
 
 % --- High values are zeroed
@@ -121,7 +124,7 @@ indx_C = find(C(1:end-2)<thrsh & C(2:end-1)>thrsh &  C(3:end)<thrsh);
 % --- Remove some data added because of convolution
 crop_l = floor(length(model_frame)/2) ;
 
-spacer_ts_middle = sort_RF(indx_C-crop_l+2) ; 
+spacer_ts_middle = sort_RF(indx_C-crop_l+2) ;
 n_spacer = length(spacer_ts_middle);
 
 if n_spacer ~= n_expected_spacer
@@ -135,17 +138,17 @@ clear crop_l C indx_C thrsh dRF jitter
 % -- General
 % figure
 % plot(sort_RF(1:end-1), diff(sort_RF),'.-k')
-% hold on; 
-% plot(synch_Ris_tim,0.3,'.b'); 
-% plot(synch_Fal_tim,0.3,'.r'); 
-% line([0 synch_Ris_tim(end)],[0.2 0.2]) 
+% hold on;
+% plot(synch_Ris_tim,0.3,'.b');
+% plot(synch_Fal_tim,0.3,'.r');
+% line([0 synch_Ris_tim(end)],[0.2 0.2])
 % ylim([0 2])
 
 
 % -- Spacer
-% figure;
-% plot(sort_RF,1,'.k'); hold on
-% plot(spacer_ts_middle,1,'r*')
+figure;
+plot(sort_RF,1,'.k'); hold on
+plot(spacer_ts_middle,1,'r*')
 
 
 
@@ -158,36 +161,82 @@ half_l_spacer = half_l_spacer(end);
 spacer_end = half_l_spacer + 1; % TODO Hardcoded; 3 seconds added between spacer and any stimulus in protocol
 
 % --- Init
-cell_ts = cell(1,n_stim); 
+cell_ts = cell(1,n_stim);
 
-version_check = version>=[5,2,6];
-if ~ismember(0, version_check) 
+%version_check = version>=[5,2,6];
+version_check = 1
+if ~ismember(0, version_check)
     
     for i_stim = 1:n_stim
+        %% Previous cases
         if ~ismember(i_stim,id_spacer)
-                % check number of ttl found in between parser
-                id_ts_stim = find(...
-                    sort_RF > spacer_ts_middle(i_stim/2) + spacer_end & ...
-                    sort_RF < spacer_ts_middle(i_stim/2+1) - spacer_end) ;
+            % check number of ttl found in between parser
+            id_ts_stim = find(...
+                sort_RF > spacer_ts_middle(i_stim/2) + spacer_end & ...
+                sort_RF < spacer_ts_middle(i_stim/2+1) - spacer_end) ;
+            
+            if ID_stim(i_stim)~= 5
+                %% INIT
+                cell_ts{i_stim} = sort_RF(id_ts_stim);
                 
-                if ID_stim(i_stim)== 1
-                    cell_ts{i_stim} = sort_RF(id_ts_stim(2:2:end-1));  % *2 for rise/fall , + 1 as Bonsai generates 1 pulse at begining and end
-                elseif ID_stim(i_stim) == 2
-                    cell_ts{i_stim} = sort_RF(id_ts_stim(3:end)); % +2 at beginning, rapid transient artifact due to Bonsai loading
+                %% Test polarity
+                if ID_stim(i_stim) == 1
+                    pol_start_expected = -1; pol_end_expected = 1;
                 else
-                    cell_ts{i_stim} = sort_RF(id_ts_stim);
+                    pol_start_expected = 1; pol_end_expected = -1;
                 end
                 
-                if length(cell_ts{i_stim}) ~= nTTL_Stim_expected(i_stim)
-                    % plot(sort_RF(id_ts_stim),0.35,'.g')
-                    error('TTL number wrong')
+                [is_pol_start_ok,is_pol_end_ok] = TestStimPolarityIntegrity(pol_start_expected, pol_end_expected, vect_polarity_sort,id_ts_stim);
+                if is_pol_start_ok ==0
+                    warning(['Wrong transition at begining of stimulus sequence, stim ID ' num2str(ID_stim(i_stim))])
                 end
-        
+                if is_pol_end_ok == 0
+                    warning(['Wrong transition at end of stimulus sequence, stim ID ' num2str(ID_stim(i_stim))])
+                end
+                
+                
+                %% Change if necessary
+                [cell_ts{i_stim}, nTTL_Stim_expected(i_stim)] = ...
+                    Change_TTL_WhenPolWrong(ID_stim(i_stim), is_pol_start_ok, is_pol_end_ok, cell_ts{i_stim}, nTTL_Stim_expected(i_stim));
+
+                if ID_stim(i_stim) == 1
+                    cell_ts{i_stim} = cell_ts{i_stim}(1:2:end); % *2 to get only raise
+                end
+                
+                %% Check for known bugs
+                factor_jitter = 0.6 ; % We assume the Bonsai Workflow can have some jitter, so the timing measured will not be as exact as what is sent
+                    
+                if ID_stim(i_stim) == 4  % Can have rapid transient artifact at beginning
+                    if cell_ts{i_stim}(2) - cell_ts{i_stim}(1) < TaskSettings.VISUAL_STIM_4.stim_on_time * factor_jitter  
+                        cell_ts{i_stim} = cell_ts{i_stim}(3:end); % skip first 2 as Bonsai artefact
+                    end
+                end
+                
+                if ID_stim(i_stim) == 2  % Can have rapid transient artifact at beginning
+                   if cell_ts{i_stim}(2) - cell_ts{i_stim}(1) < TaskSettings.VISUAL_STIM_2.stim_on_time * factor_jitter
+                        cell_ts{i_stim} = cell_ts{i_stim}(3:end); % skip first 2 as Bonsai artefact
+                    end
+                end
+            end
+            %% Check that number of TTL is correct
+            if length(cell_ts{i_stim}) ~= nTTL_Stim_expected(i_stim)
+                if ID_stim(i_stim)== 3
+                    warning([' !!!!!! THIS SHOULD BE AN ERROR BUT NO FIX POSSIBLE !!!!!! -- TTL number wrong, length found = ' num2str(length(cell_ts{i_stim})) ', length expected = ' num2str(nTTL_Stim_expected(i_stim)) ', stim ID ' num2str(ID_stim(i_stim))])
+                else
+                    plot(sort_RF(id_ts_stim),1,'.b'); hold on
+                    plot(synch_Ris_tim,1.1,'g^', 'MarkerSize', 2)
+                    plot(synch_Fal_tim,0.9,'rv', 'MarkerSize', 2)
+                    ylim([-5 5])
+                    error(['TTL number wrong, length found = ' num2str(length(cell_ts{i_stim})) ', length expected = ' num2str(nTTL_Stim_expected(i_stim)) ', stim ID ' num2str(ID_stim(i_stim))])
+                end
+            end
+            
         end
+        
     end
     
 else
-    error('case by case extractor needed')   
+    error('case by case extractor needed')
 end
 
 %% Assign further timestamps for RF mapping
