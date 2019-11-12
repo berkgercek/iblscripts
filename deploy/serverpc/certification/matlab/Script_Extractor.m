@@ -3,8 +3,8 @@ clear all
 close all
 clc
 %% Session - path to data
-filepath_NPY ='D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
-filepath_Metadata = 'D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
+filepath_NPY ='/Users/gaelle/Downloads/Karolina-12NOV2019-CERTIFICATION';
+filepath_Metadata = '/Users/gaelle/Downloads/Karolina-12NOV2019-CERTIFICATION';
 % filepath_NPY ='/media/mattw/data/ibl/wittenlab/Subjects/lic3/2019-08-27/002/raw_ephys_data/probe_right';
 % filepath_Metadata ='/media/mattw/data/ibl/wittenlab/Subjects/lic3/2019-08-27/002/raw_behavior_data';
 
@@ -201,9 +201,6 @@ if ~ismember(0, version_check)
                 [cell_ts{i_stim}, nTTL_Stim_expected(i_stim)] = ...
                     Change_TTL_WhenPolWrong(ID_stim(i_stim), is_pol_start_ok, is_pol_end_ok, cell_ts{i_stim}, nTTL_Stim_expected(i_stim));
 
-                if ID_stim(i_stim) == 1
-                    cell_ts{i_stim} = cell_ts{i_stim}(1:2:end); % *2 to get only raise
-                end
                 
                 %% Check for known bugs
                 factor_jitter = 0.6 ; % We assume the Bonsai Workflow can have some jitter, so the timing measured will not be as exact as what is sent
@@ -218,6 +215,14 @@ if ~ismember(0, version_check)
                    if cell_ts{i_stim}(2) - cell_ts{i_stim}(1) < TaskSettings.VISUAL_STIM_2.stim_on_time * factor_jitter
                         cell_ts{i_stim} = cell_ts{i_stim}(3:end); % skip first 2 as Bonsai artefact
                     end
+                end
+                
+                if ID_stim(i_stim) == 1  % Polarity 2x artifact from v6.1.2
+                    TaskSettings.VISUAL_STIM_1.stim_on_time = 0.2; %TODO REMOVE AS HARDCODED
+                    if cell_ts{i_stim}(2) - cell_ts{i_stim}(1) > TaskSettings.VISUAL_STIM_1.stim_on_time / factor_jitter
+                        cell_ts{i_stim} = cell_ts{i_stim}(3:end); % skip first 2 as Bonsai artefact
+                    end
+                    cell_ts{i_stim} = cell_ts{i_stim}(1:2:end); % *2 to get only raise
                 end
             end
             %% Check that number of TTL is correct
