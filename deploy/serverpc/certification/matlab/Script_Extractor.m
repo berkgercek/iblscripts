@@ -5,6 +5,8 @@ clc
 %% Session - path to data
 filepath_NPY ='D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
 filepath_Metadata = 'D:\UCL\Downloads\Certification\Mock_recording\Fei_mock_14-10-2019';
+% filepath_NPY ='/media/mattw/data/ibl/wittenlab/Subjects/lic3/2019-08-27/002/raw_ephys_data/probe_right';
+% filepath_Metadata ='/media/mattw/data/ibl/wittenlab/Subjects/lic3/2019-08-27/002/raw_behavior_data';
 
 
 %% Read NPY
@@ -18,7 +20,7 @@ Fscreen = 60; % Hz, Ipad screen refresh rate
 
 % -- Map HW channels, see ibllib.io.extractors.ephys_fpga
 %    TODO : Hardcoded, should be loaded from channel map metadata (if exists)
-ch_frame2ttl = 4; % 4-12 only io needed for this protocol
+ch_frame2ttl = 12; % 4-12 only io needed for this protocol
 
 %% Read meta data
 % Extracted from .raw BIN file

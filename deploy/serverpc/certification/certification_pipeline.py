@@ -30,37 +30,14 @@ def load_ttl_pulses(session_path):
 
     from ibllib.io.extractors.ephys_fpga import _get_main_probe_sync
 
-    # ttl pulses on the left probe if present
-    # if os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_left')):
-    #     probe_dir = 'probe_left'
-    # elif os.path.exists(os.path.join(session_path, 'raw_ephys_data', 'probe_right')):
-    #     probe_dir = 'probe_right'
-    # else:
-    #     raise ValueError(
-    #         'No probe directories present in %s' % os.path.join(session_path, 'raw_ephys_data'))
-    #
-    # # load sync data (can move to ONE soon)
-    # sync_ch = np.load(glob.glob(
-    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.channels*'))[0])
-    # sync_pol = np.load(glob.glob(
-    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.polarities*'))[0])
-    # sync_times = np.load(glob.glob(
-    #     os.path.join(session_path, 'raw_ephys_data', probe_dir, '*sync.times*'))[0])
-    #
-    # if len(np.unique(sync_ch)) == 0:
-    #     raise ValueError('no spikeglx sync pulses found; was the data correctly extracted?')
-    #
-    # sync_pol_ = sync_pol[sync_ch == fr2ttl_ch]
-    # sync_times_ = sync_times[sync_ch == fr2ttl_ch]
-    # sync_rise_times = sync_times_[sync_pol_ == 1]
-    # sync_fall_times = sync_times_[sync_pol_ == -1]
-    # ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
-
     # get sync pulses
     try:
         sync, sync_chmap = _get_main_probe_sync(session_path)
     except FileNotFoundError:
-        # temporary fix: create empty bin files in `probe_right` for Guido dataset
+        # temporary fix: create empty bin files in `raw_ephys_data/probe_right`
+        new_dir = os.path.join(session_path, 'raw_ephys_data', 'probe_right')
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
         lf_file = 'sync_testing_g0_t0.imec1.lf.bin'
         open(os.path.join(session_path, 'raw_ephys_data', 'probe_right', lf_file), 'a').close()
         ap_file = 'sync_testing_g0_t0.imec1.ap.bin'
@@ -73,11 +50,11 @@ def load_ttl_pulses(session_path):
     # find times of when ttl polarity changes on fr2ttl channel
     sync_pol_ = sync['polarities'][sync['channels'] == fr2ttl_ch]
     sync_times_ = sync['times'][sync['channels'] == fr2ttl_ch]
-    sync_rise_times = sync_times_[sync_pol_ == 1]
-    sync_fall_times = sync_times_[sync_pol_ == -1]
-    ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
+    # sync_rise_times = sync_times_[sync_pol_ == 1]
+    # sync_fall_times = sync_times_[sync_pol_ == -1]
+    # ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
 
-    return ttl_sig
+    return sync_pol_, sync_times_  # ttl_sig
 
 
 def load_rf_mapping_stimulus(session_path, stim_metadata):
@@ -219,6 +196,60 @@ def get_expected_ttl_pulses(stim_order, stim_meta, ttl_signal_rf_map):
                 # spontaneous activity, no stimulus info in metadata
                 n_expected_ttl_pulses[i] = 0
     return n_expected_ttl_pulses
+
+
+# def update_ttl_pulses(stim_name, is_pol_beg_ok, is_pol_end_ok, stim_ts, n_expected_ttl_pulses):
+#     """
+#
+#     :param stim_name: stim protocol name (e.g. 'receptive_field_mapping', 'contrast_reversal')
+#     :type stim_name: str
+#     :param is_pol_beg_ok:
+#     :type is_pol_beg_ok: bool
+#     :param is_pol_end_ok:
+#     :type is_pol_end_ok: bool
+#     :param stim_ts: stimulus presentation times
+#     :type stim_ts: array-like
+#     :param n_expected_ttl_pulses:
+#     :type n_expected_ttl_pulses: int
+#     :return: (new_stim_ts, new_expected_ttl_pulses)
+#     :rtype: tuple
+#     """
+#
+#     import copy
+#     new_stim_ts = copy.copy(stim_ts)
+#     new_expected_ttl_pulses = n_expected_ttl_pulses
+#
+#     if not is_pol_beg_ok:
+#         if stim_name == 'receptive_field_mapping':
+#             new_stim_ts = stim_ts[1:]
+#             print('--> 1 TTL pulse removed from beginning')
+#         elif stim_name == 'orientation-direction_selectivity':
+#             new_stim_ts = stim_ts[1:]
+#             print('--> 1 TTL pulse removed from beginning')
+#         elif stim_name == 'contrast_reversal':
+#             raise NotImplementedError
+#         elif stim_name == 'task_stimuli':
+#             new_stim_ts = stim_ts[1:]
+#             print('--> 1 TTL pulse removed from beginning')
+#         else:
+#             raise ValueError('"%s" is not a valid stimulus protocol' % stim_name)
+#
+#     if not is_pol_end_ok:
+#         if stim_name == 'receptive_field_mapping':
+#             new_stim_ts = stim_ts[:-1]
+#             print('--> 1 TTL pulse removed from end')
+#         elif stim_name == 'orientation-direction_selectivity':
+#             new_expected_ttl_pulses -= 1
+#             print('--> updated correct number of TTL pulses')
+#         elif stim_name == 'contrast_reversal':
+#             raise NotImplementedError
+#         elif stim_name == 'task_stimuli':
+#             new_stim_ts = stim_ts[:-1]
+#             print('--> 1 TTL pulse removed from end')
+#         else:
+#             raise ValueError('"%s" is not a valid stimulus protocol' % stim_name)
+#
+#     return new_stim_ts, new_expected_ttl_pulses
 
 
 def get_spacer_times(spacer_template, jitter, ttl_signal, t_quiet):
@@ -403,7 +434,8 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
     IBLRIG_VERSION_MIN = '5.2.9'
 
     # get ttl signal for extracting stim info (to compare with expected ttl signals in metadata)
-    ttl_sig = load_ttl_pulses(session_path)
+    # ttl_sig = load_ttl_pulses(session_path)
+    sync_pol, sync_times = load_ttl_pulses(session_path)
 
     # load session metadata
     meta = load_session_metadata(session_path)
@@ -436,7 +468,7 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
     n_expected_ttl_pulses = get_expected_ttl_pulses(stim_order, meta, frame_ttl_signal)
 
     # get spacer info
-    spacer_times, conv_sig = get_spacer_times(spacer_template, t_bin * bin_jitter, ttl_sig, 1)
+    spacer_times, conv_sig = get_spacer_times(spacer_template, t_bin * bin_jitter, sync_times, 1)
     idxs_spacer = np.where(stim_order == get_stim_num_from_name(stim_ids, 'spacer'))[0]
     n_expected_spacers = len(idxs_spacer)
     n_spacers = spacer_times.shape[0]
@@ -446,8 +478,10 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
             (n_spacers, n_expected_spacers))
     else:
         print('found expected number of stimulus spacers')
+    print('\n')
 
     # get stimulus info
+    bonsai_jitter = 0.6  # bonsai timing can be slightly off
     stim_ts = [[] for _ in stim_order]
     stim_datas = [[] for _ in stim_order]
     stim_names = [[] for _ in stim_order]
@@ -455,61 +489,142 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
     for i, stim_id in enumerate(stim_order):
         stim_names[i] = stim_ids[str(stim_id)].lower()
         if i not in idxs_spacer:
+
+            print('processing stimulus: %s' % stim_names[i])
+
             # assumes all non-spacers are preceded by a spacer
-            ttl_times = np.where(
-                (ttl_sig > spacer_times[int(i / 2), 1]) &
-                (ttl_sig < spacer_times[int((i + 1) / 2), 0]))[0]
-            if stim_ids[str(stim_id)] == 'receptive_field_mapping':
-                # we only recorded rise times earlier; ttl_stim contains rise and
-                # fall times
-                # beg/end offsets b/c Bonsai generates 1 pulse at beginning and end
-                stim_ts[i] = ttl_sig[ttl_times[1:-2:2]]
-                stim_datas[i] = None  # handled below
-            elif stim_names[i] == 'orientation-direction_selectivity':
-                # offset by 2 at beginning; rapid transient artifact due to Bonsai loading
-                # separate ttl pulses for stim on and stim off
-                if np.diff(ttl_sig[ttl_times[:2]]) < 0.5:
-                    stim_ts[i] = np.stack(
-                        [ttl_sig[ttl_times[2::2]], ttl_sig[ttl_times[3::2]]], axis=1)
+            sync_idxs = np.where(
+                (sync_times > spacer_times[int(i / 2), 1]) &
+                (sync_times < spacer_times[int((i + 1) / 2), 0]))[0]
+
+            # ttl signal polarities are different depending on stimulus
+            if stim_names[i] == 'receptive_field_mapping':
+                pol_beg_expected = -1
+                pol_end_expected = 1
+            else:
+                pol_beg_expected = 1
+                pol_end_expected = -1
+            # test beg/end polarities
+            if stim_names[i] != 'spontaneous_activity':
+                # check if initial polarity is correct
+                if sync_pol[sync_idxs[0]] != pol_beg_expected:
+                    is_pol_beg_ok = False
+                    print('\twarning! wrong polarity detected at beginning of %s' % stim_names[i])
                 else:
-                    stim_ts[i] = np.stack(
-                        [ttl_sig[ttl_times[0::2]], ttl_sig[ttl_times[1::2]]], axis=1)
+                    is_pol_beg_ok = True
+                # check if final polarity is correct
+                if sync_pol[sync_idxs[-1]] != pol_end_expected:
+                    is_pol_end_ok = False
+                    print('\twarning! wrong polarity detected at end of %s' % stim_names[i])
+                else:
+                    is_pol_end_ok = True
+            else:
+                is_pol_beg_ok = True
+                is_pol_end_ok = True
+
+            if stim_names[i] == 'receptive_field_mapping':
+                stim_ts[i] = sync_times[sync_idxs]
+                # account for polarity correctness
+                if not is_pol_beg_ok:
+                    stim_ts[i] = stim_ts[i][1:]
+                    print('\t--> 1 TTL pulse removed from beginning')
+                if not is_pol_end_ok:
+                    stim_ts[i] = stim_ts[i][:-1]
+                    print('\t--> 1 TTL pulse removed from end')
+                stim_on_time = 0.2  # TODO: hardcoded for now
+                # we only recorded rise times earlier; sync_times contains rise and fall times
+                if np.diff(stim_ts[i][:2]) < bonsai_jitter * stim_on_time:
+                    # get rid of bonsai artifacts at beginning
+                    stim_ts[i] = stim_ts[i][2::2]
+                    print('\tremoved bonsai onset artifact')
+                else:
+                    stim_ts[i] = stim_ts[i][0::2]
+                stim_datas[i] = None  # handled below
+
+            elif stim_names[i] == 'orientation-direction_selectivity':
+                stim_ts[i] = sync_times[sync_idxs]
+                # account for polarity correctness
+                if not is_pol_beg_ok:
+                    stim_ts[i] = stim_ts[i][1:]
+                    print('\t--> 1 TTL pulse removed from beginning')
+                if not is_pol_end_ok:
+                    # stim_ts[i] = stim_ts[i][:-1]
+                    n_expected_ttl_pulses[i] = n_expected_ttl_pulses[i] - 1  # -= 1 fails
+                    print('\t--> 1 updated to correct number of TTL pulses')
+                # separate ttl pulses for stim on and stim off
+                print(np.diff(stim_ts[i][:11]))
+                print(np.diff(stim_ts[i][-11:]))
+                print(stim_ts[i].shape)
+                print(len(meta['VISUAL_STIM_%i' % stim_id]['stim_sequence']))
+                stim_on_time = meta['VISUAL_STIM_%i' % stim_id]['stim_on_time']
+                if np.diff(stim_ts[i][:2]) < bonsai_jitter * stim_on_time:
+                    # get rid of bonsai artifacts at beginning
+                    stim_ts[i] = np.stack([stim_ts[i][2::2], stim_ts[i][3::2]], axis=1)
+                    print('\tremoved bonsai onset artifact')
+                else:
+                    stim_ts[i] = np.stack([stim_ts[i][0::2], stim_ts[i][1::2]], axis=1)
                 # ttl pulse for each stim rather than on/off
                 n_expected_ttl_pulses[i] /= 2
                 stim_sequence = meta['VISUAL_STIM_%i' % stim_id]['stim_sequence']
                 stim_rads = meta['VISUAL_STIM_%i' % stim_id]['stim_directions_rad']
                 # export direction of each grating in radians
                 stim_datas[i] = np.array([stim_rads[str(j)] for j in stim_sequence])
+
             elif stim_names[i] == 'contrast_reversal':
-                stim_ts[i] = ttl_sig[ttl_times]
+                stim_ts[i] = sync_times[sync_idxs]
+                # account for polarity correctness
+                # if not (is_pol_beg_ok and is_pol_end_ok):
+                #     raise NotImplementedError
                 stim_datas[i] = get_contrast_reversal_stimulus(meta)
+
             elif stim_names[i] == 'task_stimuli':
+                stim_ts[i] = sync_times[sync_idxs]
+                # account for polarity correctness
+                if not is_pol_beg_ok:
+                    stim_ts[i] = stim_ts[i][1:]
+                    print('\t--> 1 TTL pulse removed from beginning')
+                if not is_pol_end_ok:
+                    stim_ts[i] = stim_ts[i][:-1]
+                    print('\t--> 1 TTL pulse removed from end')
                 # separate ttl pulses for stim on and stim off
-                if np.diff(ttl_sig[ttl_times[:2]]) < 0.5:
-                    stim_ts[i] = np.stack(
-                        [ttl_sig[ttl_times[2::2]], ttl_sig[ttl_times[3::2]]], axis=1)
+                stim_on_time = meta['VISUAL_STIM_%i' % stim_id]['stim_on_time']
+                if np.diff(stim_ts[i][:2]) < bonsai_jitter * stim_on_time:
+                    # get rid of bonsai artifacts at beginning
+                    stim_ts[i] = np.stack([stim_ts[i][2::2], stim_ts[i][3::2]], axis=1)
+                    print('\tremoved bonsai onset artifact')
                 else:
-                    stim_ts[i] = np.stack(
-                        [ttl_sig[ttl_times[0::2]], ttl_sig[ttl_times[1::2]]], axis=1)
+                    stim_ts[i] = np.stack([stim_ts[i][0::2], stim_ts[i][1::2]], axis=1)
                 # ttl pulse for each stim rather than on/off
                 n_expected_ttl_pulses[i] /= 2
                 stim_datas[i] = get_task_stimulus(session_path)
+
             elif stim_names[i] == 'spontaneous_activity':
                 stim_ts[i] = np.array(
                     [spacer_times[int(i / 2), 1], spacer_times[int((i + 1) / 2), 0]])
                 n_expected_ttl_pulses[i] = 2
                 stim_datas[i] = np.array([])
+
             else:
                 raise ValueError('"%s" is an unknown stimulus protocol' % stim_names[i])
+
             # check ttl pulses against expected ttl pulses from upper left stim pixel
             # (rf mapping) and metadata (all other stims)
             if stim_ts[i].shape[0] != n_expected_ttl_pulses[i]:
                 incorrect_pulses += 1
                 print(
-                    'TTL pulses inconsistent for %s; expected %i, found %i' %
+                    '\tTTL pulses inconsistent for %s; expected %i, found %i' %
                     (stim_names[i], n_expected_ttl_pulses[i], stim_ts[i].shape[0]))
+                if stim_names[i] == 'contrast_reversal':
+                    print(
+                      '\twarning! no known fix for properly extracting contrast reversal ttl\n' +
+                      '\tdo not trust exported contrast reversal info')
+                    incorrect_pulses -= 1
+            else:
+                print('\tsuccessful stimulus extraction')
+            print('\n')
+
     if incorrect_pulses == 0:
-        print('found expected number of TTL pulses')
+        print('found expected number of TTL pulses!')
 
     # assign proper timestamps for rf mapping
     if frame_ttl_signal is not None:
