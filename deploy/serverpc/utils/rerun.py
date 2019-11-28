@@ -15,6 +15,7 @@ from dateutil.parser import parse
 import re
 import argparse
 
+import alf.io
 from ibllib.io import flags, spikeglx
 import ibllib.pipes.experimental_data as pipes
 import ibllib.pipes.extract_session as extract_session
@@ -149,11 +150,12 @@ def _rerun_avi_files(root_path, flag_name, task_excludes=None, task_includes=Non
     avi_files = _glob_date_range(root_path, task_excludes=task_excludes,
                                  task_includes=task_includes,
                                  glob_pattern='_iblrig_*Camera.raw.avi', drange=drange)
-    for af in avi_files:
+    avi_folders = list(set([str(af.parent) for af in avi_files]))
+    for af in avi_folders:
         print(af)
         if dry:
             continue
-        flags.create_compress_video_flags(af.parents[1], flag_name)
+        flags.create_compress_video_flags(Path(af).parent, flag_name)
 
 
 def _rerun_wav_files(root_path, flag_name, task_excludes=None, task_includes=None,
@@ -177,7 +179,7 @@ def _rerun_ephys(ses_path, drange=DRANGE, dry=True, pipefunc=None, flagstr=None)
         if dry:
             print(ef)
             continue
-        session_path = extract_session.get_session_path(ef)
+        session_path = alf.io.get_session_path(ef)
         flags.create_other_flags(session_path, flagstr, force=True)
     if not dry:
         pipefunc(session_path)

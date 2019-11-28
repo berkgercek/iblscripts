@@ -9,7 +9,7 @@ from pathlib import Path
 
 from alf.folders import next_num_folder
 
-from misc import load_videopc_params
+from ibllib.pipes.misc import load_videopc_params
 import config_cameras as cams
 
 
@@ -25,7 +25,6 @@ def main(mouse: str, training_session: bool = False) -> None:
     RECORD_FILE = BONSAI_WORKFLOWS_PATH / 'three_cameras_record.bonsai'
     if training_session:
         RECORD_FILE = BONSAI_WORKFLOWS_PATH / 'three_cameras_record_biasedCW.bonsai'
-
 
     DATE = datetime.datetime.now().date().isoformat()
     NUM = next_num_folder(DATA_FOLDER / SUBJECT_NAME / DATE)
