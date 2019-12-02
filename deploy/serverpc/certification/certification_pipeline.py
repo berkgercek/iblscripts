@@ -4,6 +4,29 @@ import json
 import numpy as np
 
 
+def get_session_path(path):
+    """
+    Return local session path given a local path of any file from the session (assumes `Subjects`
+    directory is present)
+
+    Args:
+        path (str): absolute path of any file in session
+            e.g. /mnt/data/cortexlab/Subjects/CSHL050/2019-10-29/001/alf/spikes.times.npy
+    Example usage:
+        one = ONE()
+        eid = one.search(subject=subject, date=date, number=number)
+        files_paths = one.load(eid[0], download_only=True)
+        session_path = get_session_path(files_paths)
+    """
+    from pathlib import Path
+    subject_dir = np.where([part == 'Subjects' for part in Path(path).parts])[0]
+    if len(subject_dir) == 0:
+        raise FileNotFoundError('Could not find `Subject` directory in %s' % path)
+    else:
+        session_path = os.path.join(*Path(path).parts[:subject_dir[0] + 4])
+    return session_path
+
+
 def load_session_metadata(session_path):
     """
 
@@ -30,31 +53,32 @@ def load_ttl_pulses(session_path):
 
     from ibllib.io.extractors.ephys_fpga import _get_main_probe_sync
 
-    # get sync pulses
-    try:
-        sync, sync_chmap = _get_main_probe_sync(session_path)
-    except FileNotFoundError:
-        # temporary fix: create empty bin files in `raw_ephys_data/probe_right`
-        new_dir = os.path.join(session_path, 'raw_ephys_data', 'probe_right')
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
-        lf_file = 'sync_testing_g0_t0.imec1.lf.bin'
-        open(os.path.join(session_path, 'raw_ephys_data', 'probe_right', lf_file), 'a').close()
-        ap_file = 'sync_testing_g0_t0.imec1.ap.bin'
-        open(os.path.join(session_path, 'raw_ephys_data', 'probe_right', ap_file), 'a').close()
-        # try again
-        sync, sync_chmap = _get_main_probe_sync(session_path)
-
+    sync, sync_chmap = _get_main_probe_sync(session_path, bin_exists=False)
     fr2ttl_ch = sync_chmap['frame2ttl']
 
     # find times of when ttl polarity changes on fr2ttl channel
     sync_pol_ = sync['polarities'][sync['channels'] == fr2ttl_ch]
     sync_times_ = sync['times'][sync['channels'] == fr2ttl_ch]
-    # sync_rise_times = sync_times_[sync_pol_ == 1]
-    # sync_fall_times = sync_times_[sync_pol_ == -1]
-    # ttl_sig = np.sort(np.concatenate([sync_rise_times, sync_fall_times]))
 
-    return sync_pol_, sync_times_  # ttl_sig
+    return sync_pol_, sync_times_
+
+
+def _get_master_probe_dir(session_path):
+    """Find master probe; code from ibllib.io.extractors.ephys_fpga._get_main_probe_sync"""
+    from ibllib.io.extractors.ephys_fpga import _get_all_probes_sync
+    from ibllib.io.extractors.ephys_fpga import get_neuropixel_version_from_files
+    ephys_files = _get_all_probes_sync(session_path)
+    if not ephys_files:
+        raise FileNotFoundError(f"No ephys files found in {session_path}")
+    version = get_neuropixel_version_from_files(ephys_files)
+    if version == '3A':
+        # the sync master is the probe with the most sync pulses
+        sync_box_ind = np.argmax([ef.sync.times.size for ef in ephys_files])
+    elif version == '3B':
+        # the sync master is the nidq breakout box
+        sync_box_ind = np.argmax([1 if ef.get('nidq') else 0 for ef in ephys_files])
+    probe_dir = ephys_files[sync_box_ind].path
+    return probe_dir
 
 
 def load_rf_mapping_stimulus(session_path, stim_metadata):
@@ -552,10 +576,10 @@ def extract_stimulus_info_to_alf(session_path, t_bin=1/60, bin_jitter=3, save=Tr
                     n_expected_ttl_pulses[i] = n_expected_ttl_pulses[i] - 1  # -= 1 fails
                     print('\t--> 1 updated to correct number of TTL pulses')
                 # separate ttl pulses for stim on and stim off
-                print(np.diff(stim_ts[i][:11]))
-                print(np.diff(stim_ts[i][-11:]))
-                print(stim_ts[i].shape)
-                print(len(meta['VISUAL_STIM_%i' % stim_id]['stim_sequence']))
+                # print(np.diff(stim_ts[i][:11]))
+                # print(np.diff(stim_ts[i][-11:]))
+                # print(stim_ts[i].shape)
+                # print(len(meta['VISUAL_STIM_%i' % stim_id]['stim_sequence']))
                 stim_on_time = meta['VISUAL_STIM_%i' % stim_id]['stim_on_time']
                 if np.diff(stim_ts[i][:2]) < bonsai_jitter * stim_on_time:
                     # get rid of bonsai artifacts at beginning
@@ -655,11 +679,7 @@ if __name__ == '__main__':
     one = ONE()
     eid = one.search(subject='ZM_2104', date='2019-09-19', number=1)
     dtypes = [
-        # 'clusters.channels',
-        # 'clusters.depths',
-        # 'spikes.clusters',
-        # 'spikes.depths',
-        # 'spikes.times',
+        'ephysData.raw.meta',
         '_spikeglx_sync.channels',
         '_spikeglx_sync.polarities',
         '_spikeglx_sync.times',
@@ -668,10 +688,5 @@ if __name__ == '__main__':
         '_iblrig_taskSettings.raw'
     ]
     files_paths = one.load(eid[0], dataset_types=dtypes, clobber=False, download_only=True)
-    ephys_dir = np.where([part == 'raw_ephys_data' for part in Path(files_paths[0]).parts])[0]
-    if len(ephys_dir) == 0:
-        raise FileNotFoundError(
-            'Must download _spikeglx_sync_ files into `raw_ephys_data` directory')
-    session_path = os.path.join(*Path(files_paths[0]).parts[:ephys_dir[0]])
-
+    session_path = get_session_path(files_paths[0])
     extract_stimulus_info_to_alf(session_path, save=True)
